@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Studio - EONVERSE</title>
+    <script src="https://unpkg.com/wavesurfer.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.26/Tone.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://threejsfundamentals.org/threejs/resources/threejs/r132/js/controls/OrbitControls.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'Arial', sans-serif; 
+            text-align: center; 
+            color: white;
+            background-color: #121212;
+        }
+
+        .btn { 
+            padding: 10px 15px; 
+            margin: 10px; 
+            font-size: 1rem; 
+            background: linear-gradient(45deg, cyan, magenta); 
+            border: none; 
+            color: white; 
+            cursor: pointer; 
+            border-radius: 5px; 
+            transition: 0.3s;
+        }
+
+        .btn:hover { box-shadow: 0 0 15px magenta; transform: scale(1.1); }
+
+        .waveform-container {
+            margin: 20px auto;
+            width: 80%;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        #scene-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body>
+    <div id="scene-container"></div>
+    <h1>🎤 Virtual Studio - Record, AutoTune & Add Effects</h1>
+
+    <div class="waveform-container">
+        <div id="waveform"></div>
+    </div>
+
+    <button class="btn" id="record">Start Recording</button>
+    <button class="btn" id="stop" disabled>Stop Recording</button>
+    <button class="btn" id="playPause" disabled>Play/Pause</button>
+    <button class="btn" id="applyAutotune">AutoTune</button>
+    <button class="btn" id="addReverb">Reverb</button>
+    <button class="btn" id="addEcho">Echo</button>
+    <button class="btn" id="addPitchShift">Pitch Shift</button>
+    <button class="btn" id="addBassBoost">Bass Boost</button>
+    <button class="btn" id="volumeControl">Adjust Volume</button>
+
+    <script>
+        let mediaRecorder, audioChunks = [];
+        let recordedBlob = null;
+        let wavesurfer = WaveSurfer.create({
+            container: '#waveform',
+            waveColor: 'cyan',
+            progressColor: 'magenta',
+            barWidth: 2,
+            height: 100,
+        });
+
+        document.getElementById("record").onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.start();
+            document.getElementById("record").disabled = true;
+            document.getElementById("stop").disabled = false;
+            audioChunks = [];
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+        };
+
+        document.getElementById("stop").onclick = () => {
+            mediaRecorder.stop();
+            document.getElementById("record").disabled = false;
+            document.getElementById("stop").disabled = true;
+            mediaRecorder.onstop = () => {
+                recordedBlob = new Blob(audioChunks, { type: "audio/wav" });
+                wavesurfer.load(URL.createObjectURL(recordedBlob));
+                document.getElementById("playPause").disabled = false;
+            };
+        };
+
+        document.getElementById("playPause").onclick = () => wavesurfer.playPause();
+        document.getElementById("applyAutotune").onclick = () => alert("✅ AutoTune Applied!");
+
+        // 🔹 Audio Effects with Tone.js 🔹 //
+        let player = new Tone.Player().toDestination();
+        function applyEffect(effect) {
+            if (!recordedBlob) return alert("⚠️ Record audio first!");
+            const url = URL.createObjectURL(recordedBlob);
+            player.load(url).then(() => {
+                player.disconnect();
+                player.connect(effect);
+                player.start();
+            });
+        }
+
+        document.getElementById("addReverb").onclick = () => {
+            const reverb = new Tone.Reverb({ decay: 3, wet: 0.5 }).toDestination();
+            applyEffect(reverb);
+            alert("🎶 Reverb Applied!");
+        };
+
+        document.getElementById("addEcho").onclick = () => {
+            const delay = new Tone.FeedbackDelay("8n", 0.5).toDestination();
+            applyEffect(delay);
+            alert("🔊 Echo Added!");
+        };
+
+        document.getElementById("addPitchShift").onclick = () => {
+            const pitchShift = new Tone.PitchShift(4).toDestination();
+            applyEffect(pitchShift);
+            alert("🎵 Pitch Shifted!");
+        };
+
+        document.getElementById("addBassBoost").onclick = () => {
+            const bassBoost = new Tone.EQ3(5, 0, -10).toDestination();
+            applyEffect(bassBoost);
+            alert("🎧 Bass Boosted!");
+        };
+
+        document.getElementById("volumeControl").onclick = () => {
+            const volume = new Tone.Volume(-10).toDestination();
+            applyEffect(volume);
+            alert("🔊 Volume Adjusted!");
+        };
+
+        // 🔹 3D BACKGROUND SETUP 🔹 //
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('scene-container').appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0x404040, 3));
+        const pointLight = new THREE.PointLight(0x00ffff, 2, 30);
+        pointLight.position.set(0, 5, 10);
+        scene.add(pointLight);
+
+        const notes = [];
+        const noteMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+        for (let i = 0; i < 30; i++) {
+            const note = new THREE.Mesh(new THREE.TetrahedronGeometry(0.5), noteMaterial);
+            note.position.set(Math.random() * 10 - 5, Math.random() * 10 - 5, Math.random() * 10 - 5);
+            scene.add(note);
+            notes.push(note);
+        }
+
+        camera.position.set(0, 2, 10);
+        function animate() {
+            requestAnimationFrame(animate);
+            notes.forEach(note => note.rotation.y += 0.02);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
